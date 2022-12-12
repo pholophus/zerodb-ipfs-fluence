@@ -16,12 +16,14 @@
 
 #![allow(improper_ctypes)]
 
-use types::{IpfsGetPeerIdResult, IpfsPutResult, IpfsResult};
+use types::{IpfsGetPeerIdResult, IpfsPutResult, IpfsResult, IpfsGetResult};
 
 use marine_rs_sdk::marine;
 use marine_rs_sdk::module_manifest;
 use marine_rs_sdk::MountedBinaryResult;
 use marine_rs_sdk::WasmLoggerBuilder;
+use ascii_converter::*;
+// use substring::Substring;
 
 use eyre::{Result, WrapErr};
 
@@ -96,36 +98,6 @@ pub fn put(file_path: String, api_multiaddr: String, timeout_sec: u64) -> IpfsPu
         .into()
 }
 
-/// DAG put input to IPFS and return its hash.
-#[marine]
-pub fn dag_put(file_path: String, api_multiaddr: String, timeout_sec: u64) -> IpfsPutResult {
-    log::info!("put called with file path {}", file_path);
-
-    if !std::path::Path::new(&file_path).exists() {
-        return IpfsPutResult {
-            success: false,
-            error: format!("path {} doesn't exist", file_path),
-            hash: "".to_string(),
-        };
-    }
-
-    let args = vec![
-        String::from("dag"),
-        String::from("put"),
-        String::from("--input-codec="),
-        String::from("raw"),
-        String::from(file_path)
-    ];
-
-    let cmd = make_cmd_args(args, api_multiaddr, timeout_sec);
-
-    log::info!("ipfs put args {:?}", cmd);
-
-    unwrap_mounted_binary_result(ipfs(cmd))
-        .map(|res| res.trim().to_string())
-        .into()
-}
-
 /// Get file by provided hash from IPFS, saves it to a temporary file and returns a path to it.
 #[marine]
 pub fn get(hash: String, file_path: String, api_multiaddr: String, timeout_sec: u64) -> IpfsResult {
@@ -148,27 +120,61 @@ pub fn get(hash: String, file_path: String, api_multiaddr: String, timeout_sec: 
         .into()
 }
 
-/// Get content by provided hash from IPFS.
+pub fn code_points_to_str(points: &str) -> String {
+    points.split(" ").map(|p| char::from_u32(p.parse::<u32>().unwrap()).unwrap_or('?')).collect()
+}
+
+/// Store to IPFS usign DAG.
 #[marine]
-pub fn dag_get(hash: String, file_path: String, api_multiaddr: String, timeout_sec: u64) -> IpfsResult{
-    log::info!("get called with hash {}", hash);
+pub fn dag_put(input: String, api_multiaddr: String, timeout_sec: u64) -> IpfsPutResult{
+    log::info!("get called with hash {}", input);
+
+    /**For testing */
+    // let value = stringify!({"name":"iqbal"});
+    // let input = format!(r#"{}"#, value);
+    //"{ \"name\" : \"iqbal\" }"
+
+    let input = format!(r#"{}"#, input);
+    
+    let finalInput = String::from("echo '".to_owned()+&input+"' | ipfs dag put");
 
     let args = vec![
-        String::from("dag"),
-        String::from("get"),
-        inject_vault_host_path(file_path),
-        hash,
+        String::from("-c"),
+        finalInput,
     ];
 
-    let cmd = make_cmd_args(args, api_multiaddr, timeout_sec);
+    let cmd = make_cmd_args(args, api_multiaddr.clone(), timeout_sec);
 
-    log::info!("ipfs get args {:?}", cmd);
+    println!("cmd ---> {:?}",cmd);
 
-    unwrap_mounted_binary_result(ipfs(cmd))
-        .map(|output| {
-            log::info!("ipfs get output: {}", output);
-        })
+    unwrap_mounted_binary_result(bash(cmd))
+        .map(|res| res.trim().to_string())
         .into()
+
+}
+
+/// Get content by provided hash from IPFS.
+#[marine]
+pub fn dag_get(hash: String, api_multiaddr: String, timeout_sec: u64)-> IpfsPutResult{
+    log::info!("get called with hash {}", hash);
+
+    /**For testing */
+    // let value = stringify!({"name":"iqbal"});
+    // let input = format!(r#"{}"#, value);
+    //"{ \"name\" : \"iqbal\" }"
+
+    let ipfs_arg = format!("ipfs dag get {}", hash);
+
+    let args = vec![
+        String::from("-c"),
+        ipfs_arg,
+    ];
+
+    let cmd = make_cmd_args(args, api_multiaddr.clone(), timeout_sec);
+    unwrap_mounted_binary_result(bash(cmd))
+        .map(|res| res.trim().to_string())
+        .into()
+
 }
 
 #[marine]
@@ -197,6 +203,12 @@ pub fn get_peer_id(api_multiaddr: String, timeout_sec: u64) -> IpfsGetPeerIdResu
 extern "C" {
     /// Execute provided cmd as a parameters of ipfs cli, return result.
     pub fn ipfs(cmd: Vec<String>) -> MountedBinaryResult;
+
+    /// Execute provided cmd as a parameters of bash command, return result.
+    pub fn bash(cmd: Vec<String>) -> MountedBinaryResult;
+
+    /// Execute provided cmd as a parameters of curl command, return result.
+    pub fn curl(cmd: Vec<String>) -> MountedBinaryResult;
 }
 
 fn inject_vault_host_path(path: String) -> String {
