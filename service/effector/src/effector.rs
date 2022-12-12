@@ -145,8 +145,6 @@ pub fn dag_put(input: String, api_multiaddr: String, timeout_sec: u64) -> IpfsPu
 
     let cmd = make_cmd_args(args, api_multiaddr.clone(), timeout_sec);
 
-    println!("cmd ---> {:?}",cmd);
-
     unwrap_mounted_binary_result(bash(cmd))
         .map(|res| res.trim().to_string())
         .into()
